@@ -314,7 +314,7 @@ class Evaluator:
             filename = os.path.join('output', dataset_type, 'checkpoints', model.lower(), filename)  
         epoch, loss = 0.0, 0.0
         if os.path.isfile(filename):
-            checkpoint = torch.load(filename)
+            checkpoint = torch.load(filename, map_location=torch.device('cpu'))
             name = os.path.basename(filename)
             self.model.load_state_dict(checkpoint['model_state_dict'])
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])

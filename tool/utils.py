@@ -85,29 +85,47 @@ class Util:
             np.savetxt(val_filename, val_losses, delimiter=",", fmt='%g')
             
     def save_examples(self, inputs, target, output, step):
-        input_seq_length = inputs.shape[2]
-        row = step // input_seq_length
-        fig_input, ax_input = plt.subplots(nrows=1, ncols=input_seq_length)
-        fig_ground_truth, ax_ground_truth = plt.subplots(nrows=row, ncols=input_seq_length)
-        fig_prediction, ax_prediction = plt.subplots(nrows=row, ncols=input_seq_length)
-        count = 0
-        for i in range(row):
-            for j in range(input_seq_length):
-                if step == 5:
-                    ax_input[j] = self.__create_image_plot(inputs, ax_input, i, j, count+j, step)  
-                    ax_ground_truth[j] = self.__create_image_plot(target, ax_ground_truth, i,j ,count+j, step)
-                    ax_prediction[j] = self.__create_image_plot(output, ax_prediction, i,j ,count+j, step)
-                else:
-                    if i == 0:
-                        ax_input[j] = self.__create_image_plot(inputs, ax_input, i, j, count+j, step, ax_input=True)
-                    ax_ground_truth[i][j] = self.__create_image_plot(target, ax_ground_truth, i,j ,count+j, step)
-                    ax_prediction[i][j] = self.__create_image_plot(output, ax_prediction, i,j ,count+j, step)
-            count+=5
-                    
-        examples_dir = self.__create_dir('examples')
-        self.__save_image_plot(fig_input, examples_dir, 'input', step, fig_input=True)
-        self.__save_image_plot(fig_ground_truth, examples_dir, 'ground_truth', step)
-        self.__save_image_plot(fig_prediction, examples_dir, 'prediction', step)
+        # Visualize all channels and all time steps for each tensor
+        # Assumes input shape: [batch, channels, time, height, width]
+        def plot_tensor_grid(tensor, name, step, examples_dir):
+            batch_idx = 0  # Only plot the first sample in the batch for clarity
+            channels = tensor.shape[1]
+            time_steps = tensor.shape[2]
+            # Compute global min and max for consistent color range
+            tensor_np = tensor[batch_idx].cpu().numpy()  # shape: [channels, time, H, W]
+            vmin = tensor_np.min()
+            vmax = tensor_np.max()
+            # Handle 1D cases for channels or time_steps
+            if channels == 1 and time_steps == 1:
+                fig, axes = plt.subplots(1, 1, figsize=(4, 4))
+                axes_grid = np.array([[axes]])
+            elif channels == 1:
+                fig, axes = plt.subplots(1, time_steps, figsize=(3*time_steps, 3))
+                axes_grid = np.array(axes).reshape((1, time_steps))
+            elif time_steps == 1:
+                fig, axes = plt.subplots(channels, 1, figsize=(3, 3*channels))
+                axes_grid = np.array(axes).reshape((channels, 1))
+            else:
+                fig, axes = plt.subplots(channels, time_steps, figsize=(3*time_steps, 3*channels))
+                axes_grid = axes
+            cmap = 'YlGnBu' if self.base_filename.startswith('chirps') else 'viridis'
+            for c in range(channels):
+                for t in range(time_steps):
+                    ax = axes_grid[c, t]
+                    img = tensor[batch_idx, c, t].cpu().numpy()
+                    ax.imshow(np.flipud(img), cmap=cmap, vmin=vmin, vmax=vmax)
+                    ax.set_title(f"Ch {c}, T {t}")
+                    ax.axis('off')
+            fig.suptitle(f"{name}")
+            filename = os.path.join(examples_dir, f"{name}_grid_{self.base_filename}.png")
+            fig.tight_layout(rect=(0, 0, 1, 0.96))
+            fig.savefig(filename, dpi=300)
+            plt.close(fig)
+
+        examples_dir = self.__create_dir('examples', include_model_descr=False)
+        plot_tensor_grid(inputs, 'input', step, examples_dir)
+        plot_tensor_grid(target, 'ground_truth', step, examples_dir)
+        plot_tensor_grid(output, 'prediction', step, examples_dir)
     
     def get_checkpoint_filename(self):
         check_dir = self.__create_dir('checkpoints')
@@ -155,8 +173,11 @@ class Util:
         os.makedirs(val_dir, exist_ok=True)     
         return train_dir, val_dir
     
-    def __create_dir(self, dir_name):
-        new_dir = os.path.join(self.output_dir, dir_name, self.model_descr)
+    def __create_dir(self, dir_name, include_model_descr=True):
+        if include_model_descr:
+            new_dir = os.path.join(self.output_dir, dir_name, self.model_descr)
+        else:
+            new_dir = os.path.join(self.output_dir, dir_name)
         os.makedirs(new_dir, exist_ok=True)
         return new_dir
         
@@ -181,3 +202,7 @@ class Util:
         figure.suptitle(name, y=y)
         filename = os.path.join(folder, name + '_' + self.base_filename + '.png') 
         figure.savefig(filename, dpi=300)
+    
+    def get_examples_dir(self):
+        """Return the directory where example images are saved (public method)."""
+        return self.__create_dir('examples', include_model_descr=False)
